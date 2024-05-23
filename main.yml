@@ -1,0 +1,183 @@
+---
+- name: Configure host
+  hosts: all
+  become: true
+  pre_tasks:
+    - name: Install updates
+      tags: always
+      ansible.builtin.apt:
+        upgrade: dist
+        update_cache: true
+  tasks:
+    - name: Install packages
+      ansible.builtin.apt:
+        name:
+          - neovim
+          - zsh
+          - ncdu
+          - tree
+          - htop
+          - nnn
+          - rsync
+          - rclone
+          - restic
+          - jq
+          - yq
+          - git
+          - tmux
+
+    - name: Install docker requirements
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+
+    - name: Add Jenkins apt repository key.
+      ansible.builtin.get_url:
+        url: https://download.docker.com/linux/debian/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Add Docker Repository
+      ansible.builtin.apt_repository:
+        repo: deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable
+        filename: docker
+        state: present
+
+    - name: Update apt and install docker-ce
+      tags: docker
+      ansible.builtin.apt:
+        update_cache: true
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-buildx-plugin
+          - docker-compose-plugin
+
+    - name: Add the user 'maksim' to group docker
+      ansible.builtin.user:
+        name: maksim
+        groups: docker
+        append: true
+
+    - name: Install flatpak
+      ansible.builtin.apt:
+        name:
+          - flatpak
+          - plasma-discover-backend-flatpak
+
+    - name: Add the Flathub flatpak remote to the system installation
+      community.general.flatpak_remote:
+        name: flathub
+        state: present
+        flatpakrepo_url: https://dl.flathub.org/repo/flathub.flatpakrepo
+
+    - name: Install flatpak packages
+      become: true
+      tags: flatpak
+      community.general.flatpak:
+        name:
+          - com.bitwarden.desktop
+          - com.github.tchx84.Flatseal
+          - it.mijorus.gearlever
+          - net.cozic.joplin_desktop
+          - org.localsend.localsend_app
+          - org.mozilla.Thunderbird
+          - org.telegram.desktop
+        state: present
+
+    - name: Install sdkman
+      become: false
+      tags: sdkman
+      ansible.builtin.shell:
+        cmd: 'curl -s "https://get.sdkman.io" | bash'
+        creates: ~/.sdkman
+
+    - name: Install Oh My Zsh
+      become: false
+      tags: zsh
+      ansible.builtin.shell:
+        cmd: 'sh -c "$(CHSH=no curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"'
+        creates: ~/.oh-my-zsh
+
+    - name: Setup zsh theme
+      become: false
+      tags: zsh
+      ansible.builtin.lineinfile:
+        path: ~/.zshrc
+        regexp: '^ZSH_THEME='
+        line: ZSH_THEME="simple"
+
+    - name: Setup zsh plugins
+      become: false
+      tags: zsh
+      ansible.builtin.lineinfile:
+        path: ~/.zshrc
+        regexp: '^plugins='
+        line: plugins=(git kubectl python)
+
+    - name: Change user shell to zsh
+      ansible.builtin.user:
+        name: maksim
+        shell: /bin/zsh
+
+    - name: Add Mozilla apt repository key.
+      tags: firefox
+      become: true
+      ansible.builtin.get_url:
+        url: https://packages.mozilla.org/apt/repo-signing-key.gpg
+        dest: /etc/apt/keyrings/packages.mozilla.org.asc
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Add Mozila Repository
+      tags: firefox
+      become: true
+      ansible.builtin.apt_repository:
+        repo: deb [signed-by=/etc/apt/keyrings/packages.mozilla.org.asc] https://packages.mozilla.org/apt mozilla main
+        filename: mozilla
+        state: present
+
+    - name: Set Mozialla preferences
+      tags: firefox
+      become: true
+      ansible.builtin.copy:
+        src: apt-preferences-mozilla
+        dest: /etc/apt/preferences.d/mozilla
+        mode: '0644'
+        owner: root
+        group: root
+
+    - name: Uninstall old Firefox
+      tags: firefox
+      become: true
+      ansible.builtin.apt:
+        name: firefox-esr
+        state: absent
+
+    - name: Install new Firefox
+      tags: firefox
+      become: true
+      ansible.builtin.apt:
+        name: firefox
+        update_cache: true
+        state: present
+
+    - name: Clone dotfiles
+      become: false
+      tags: dotfiles
+      ansible.builtin.shell:
+        cmd: 'git clone --bare git@github.com:pischule/dotfiles.git ~/.dotfiles'
+        creates: ~/.dotfiles
+
+    - name: Add dotfiles alias
+      become: false
+      tags: dotfiles
+      ansible.builtin.lineinfile:
+        path: ~/.zshrc
+        regexp: '^alias dotfiles='
+        line: alias dotfiles='/usr/bin/git --git-dir="$HOME/.dotfiles/" --work-tree="$HOME"'
