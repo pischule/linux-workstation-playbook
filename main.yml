@@ -25,6 +25,7 @@
           - yq
           - git
           - tmux
+          - python3-venv
 
     - name: Install docker requirements
       ansible.builtin.apt:
